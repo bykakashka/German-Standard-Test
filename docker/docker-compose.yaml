@@ -1,0 +1,14 @@
+version: "3"
+services:
+  db:
+    image: postgres:12.2
+    container_name: germanstandard-db
+    restart: always
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=GermanStandard
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pwd
