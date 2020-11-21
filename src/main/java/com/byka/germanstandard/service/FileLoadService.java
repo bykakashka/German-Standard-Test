@@ -24,7 +24,7 @@ public class FileLoadService {
     @Autowired
     private AdsMetricRepository adsMetricRepository;
 
-    private SimpleDateFormat dateFormat = new SimpleDateFormat("dd/MM/yy");
+    private SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/yy");
 
     public void load(InputStream dataStream) throws IOException {
         try (dataStream) {
@@ -36,6 +36,7 @@ public class FileLoadService {
     private List<AdsMetric> getDataToLoad(InputStream dataStream) {
         List<AdsMetric> dataToAdd = new ArrayList<>();
         try (CSVReader csvReader = new CSVReader(new InputStreamReader(dataStream))) {
+            // headers could be used to find value position
             String[] headers = csvReader.readNext();
             String[] line = null;
             while ((line = csvReader.readNext()) != null) {
