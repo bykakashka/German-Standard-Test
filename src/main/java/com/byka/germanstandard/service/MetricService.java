@@ -1,9 +1,12 @@
 package com.byka.germanstandard.service;
 
+import com.byka.germanstandard.data.ClickThroughRateData;
+import com.byka.germanstandard.data.ClicksMetricData;
 import com.byka.germanstandard.data.ImpressionsMetricData;
 import com.byka.germanstandard.filter.DateFilter;
 import com.byka.germanstandard.filter.MetricFilter;
 import com.byka.germanstandard.model.AdsMetric;
+import com.byka.germanstandard.model.DailyImpressionsModel;
 import com.byka.germanstandard.repository.AdsMetricRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +18,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.function.ToLongFunction;
+import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.groupingBy;
 
@@ -26,9 +32,14 @@ public class MetricService {
     @Value("${com.byka.defaultScale}")
     private Integer defaultScale;
 
-    public Long getClickByFilter(MetricFilter filter) {
+    public ClicksMetricData getClickByFilter(MetricFilter filter) {
         List<AdsMetric> ads = adsMetricRepository.findAllByDatasourceAndDateIsBetween(filter.getDatasource(), filter.getStartDate(), filter.getEndDate());
-        return ads.stream().mapToLong(AdsMetric::getClicks).sum();
+        Map<String, Long> clicksByCampaign = groupMetricByDimension(ads, AdsMetric::getClicks, AdsMetric::getCampaign);
+
+        return ClicksMetricData.builder()
+                .total(clicksByCampaign.values().stream().mapToLong(Long::longValue).sum())
+                .clicksByCampaign(clicksByCampaign)
+                .build();
     }
 
     public double getClickThroughRate(String datasource, String compaign, Integer scale) {
@@ -52,12 +63,7 @@ public class MetricService {
 
     public ImpressionsMetricData getImpressions(DateFilter dateFilter) {
         List<AdsMetric> ads = adsMetricRepository.findAllByDateIsBetween(dateFilter.getStartDate(), dateFilter.getEndDate());
-        Map<String, List<AdsMetric>> adsBySource = ads.stream().collect(groupingBy(AdsMetric::getDatasource));
-        Map<String, Long> impressionBySource = new HashMap<>(adsBySource.size());
-
-        adsBySource.forEach((k, v) ->
-                impressionBySource.put(k, v.stream().mapToLong(AdsMetric::getImpressions).sum())
-        );
+        Map<String, Long> impressionBySource = groupMetricByDimension(ads, AdsMetric::getImpressions, AdsMetric::getDatasource);
 
         return ImpressionsMetricData.builder()
                 .impressionsBySource(impressionBySource)
@@ -65,7 +71,40 @@ public class MetricService {
                 .build();
     }
 
+    public List<ClickThroughRateData> getAllClicksThroughRate() {
+        return adsMetricRepository.getAllClicksThroughtRate().stream().map(k -> ClickThroughRateData.builder()
+                .campaign(k.getCampaign())
+                .datasource(k.getDatasource())
+                .rate(BigDecimal.valueOf(k.getClicks())
+                        .divide(BigDecimal.valueOf(k.getImpressions()), defaultScale, RoundingMode.HALF_UP)
+                        .doubleValue())
+                .build()
+        ).collect(Collectors.toList());
+    }
+
+    public List<DailyImpressionsModel> getAllImpressionsByDay() {
+        return adsMetricRepository.getImpressionsByDay();
+    }
+
+    public List<String> getAllCampaigns() {
+        return adsMetricRepository.getAllCampaigns();
+    }
+
+    public List<String> getAllDatasources() {
+        return adsMetricRepository.getAllDatasources();
+    }
+
     private Integer getScale(Integer requestedScale) {
         return requestedScale == null ? defaultScale : requestedScale;
+    }
+
+    private Map<String, Long> groupMetricByDimension(List<AdsMetric> ads, ToLongFunction<AdsMetric> metric, Function<AdsMetric, String> dimension) {
+        Map<String, List<AdsMetric>> adsByCampaign = ads.stream().collect(groupingBy(dimension));
+        Map<String, Long> clicksByCampaign = new HashMap<>(adsByCampaign.size());
+
+        adsByCampaign.forEach((k, v) ->
+                clicksByCampaign.put(k, v.stream().mapToLong(metric).sum())
+        );
+        return clicksByCampaign;
     }
 }

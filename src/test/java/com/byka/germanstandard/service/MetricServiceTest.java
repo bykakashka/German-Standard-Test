@@ -1,5 +1,6 @@
 package com.byka.germanstandard.service;
 
+import com.byka.germanstandard.data.ClicksMetricData;
 import com.byka.germanstandard.data.ImpressionsMetricData;
 import com.byka.germanstandard.filter.DateFilter;
 import com.byka.germanstandard.filter.MetricFilter;
@@ -41,9 +42,10 @@ public class MetricServiceTest {
     @Test
     public void getClickByFilter() {
         List<AdsMetric> ads = new ArrayList<>(10000);
-        for (long i=1; i<=10000; i++) {
+        for (long i=1; i<=10; i++) {
             AdsMetric ad = new AdsMetric();
             ad.setClicks(i);
+            ad.setCampaign(i % 2 == 0 ? "first" : "second");
             ads.add(ad);
         }
 
@@ -54,10 +56,12 @@ public class MetricServiceTest {
 
         doReturn(ads).when(adsMetricRepository).findAllByDatasourceAndDateIsBetween(eq(filter.getDatasource()), eq(filter.getStartDate()), eq(filter.getEndDate()));
 
-        Long result = classUnderTest.getClickByFilter(filter);
+        ClicksMetricData result = classUnderTest.getClickByFilter(filter);
 
         assertNotNull(result);
-        assertEquals(50005000L, (long) result);
+        assertEquals(55L, (long) result.getTotal());
+        assertEquals(30L, (long) result.getClicksByCampaign().get("first"));
+        assertEquals(25L, (long) result.getClicksByCampaign().get("second"));
     }
 
     @Test
