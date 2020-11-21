@@ -62,7 +62,7 @@ public class MetricController {
     }
 
     @PostMapping(value = "find")
-    public List<Map<String, Object>> find(@RequestBody GenericFilter filter) {
+    public List<Map<String, Object>> find(@Valid @RequestBody GenericFilter filter) {
         return genericFindService.find(filter);
     }
 }

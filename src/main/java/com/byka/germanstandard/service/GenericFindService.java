@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
 
+
 @Service
 public class GenericFindService {
     @Autowired
@@ -23,12 +24,45 @@ public class GenericFindService {
 
     /* in my opinion, API should not have a generic endpoint to handle all possible cases like this.
     Because in future with a lot of logic it will be hard to read/debug/refactor/mantain.
-    But there is an example how we can handle different filters and agregations
+    But there is an example how we can handle different filters and agregations.
+
+    I think I can clean up this service a bit more, but I need more time
     */
 
     public List<Map<String, Object>> find(GenericFilter filter) {
+        if (filter.getAggregators().contains(AgregatorsEnum.CTR)) {
+            filter.getAggregators().add(AgregatorsEnum.CLICKS);
+            filter.getAggregators().add(AgregatorsEnum.IMPRESSIONS);
+        }
+
+        if (filter.getAggregators().size() == 1 && (filter.getGroupBy() == null || filter.getGroupBy().isEmpty())) {
+            return findSingle(filter);
+        } else {
+            return findMultiple(filter);
+        }
+    }
+
+    public List<Map<String, Object>> findMultiple(GenericFilter filter) {
         CriteriaBuilder cb = entityManager.getCriteriaBuilder();
         CriteriaQuery<Object[]> criteriaQuery = cb.createQuery(Object[].class);
+
+        List<Selection<?>> selectors = fillQuery(filter, cb, criteriaQuery);
+
+        List<Object[]> result = entityManager.createQuery(criteriaQuery).getResultList();
+        return convertResult(selectors, result, filter.getAggregators().contains(AgregatorsEnum.CTR));
+    }
+
+    public List<Map<String, Object>> findSingle(GenericFilter filter) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> criteriaQuery = cb.createQuery(Long.class);
+
+        List<Selection<?>> selectors = fillQuery(filter, cb, criteriaQuery);
+
+        Long result = entityManager.createQuery(criteriaQuery).getSingleResult();
+        return convertResult(selectors, Collections.singletonList(new Object[]{result}), filter.getAggregators().contains(AgregatorsEnum.CTR));
+    }
+
+    private <T> List<Selection<?>> fillQuery(GenericFilter filter, CriteriaBuilder cb, CriteriaQuery<T> criteriaQuery) {
         Root<AdsMetric> root = criteriaQuery.from(AdsMetric.class);
 
         List<Predicate> predicates = buildFilter(filter, cb, root);
@@ -37,14 +71,12 @@ public class GenericFindService {
         List<Expression<AdsMetric>> grouping = buildGroupBy(filter, root);
         criteriaQuery.groupBy(grouping.toArray(new Expression[0]));
 
-        List<Selection> selectors = buildSelectors(filter, cb, root);
+        List<Selection<?>> selectors = buildSelectors(filter, cb, root);
         criteriaQuery.multiselect(selectors.toArray(new Selection[0]));
-
-        List<Object[]> result = entityManager.createQuery(criteriaQuery).getResultList();
-        return convertResult(selectors, result, filter.getAggregators().contains(AgregatorsEnum.CTR));
+        return selectors;
     }
 
-    private double calculateCTR(Object clicks, Object impressions) {
+    protected double calculateCTR(Object clicks, Object impressions) {
         if ((Long) impressions == 0L) {
             return 0;
         }
@@ -54,16 +86,14 @@ public class GenericFindService {
                 .doubleValue();
     }
 
-    private List<Selection> buildSelectors(GenericFilter filter, CriteriaBuilder cb, Root<AdsMetric> root) {
-        Set<Selection> selectors = new HashSet<>();
-        if (filter.getAggregators().contains(AgregatorsEnum.CTR)) {
-            filter.getAggregators().add(AgregatorsEnum.CLICKS);
-            filter.getAggregators().add(AgregatorsEnum.IMPRESSIONS);
-        }
+    protected List<Selection<?>> buildSelectors(GenericFilter filter, CriteriaBuilder cb, Root<AdsMetric> root) {
+        Set<Selection<?>> selectors = new HashSet<>();
 
-        filter.getGroupBy().forEach(group ->
-                selectors.add(root.get(group.name().toLowerCase()).alias(group.name().toLowerCase()))
-        );
+        if (filter.getGroupBy() != null) {
+            filter.getGroupBy().forEach(group ->
+                    selectors.add(root.get(group.name().toLowerCase()).alias(group.name().toLowerCase()))
+            );
+        }
 
         filter.getAggregators().forEach(agregator -> {
             if (!AgregatorsEnum.CTR.equals(agregator)) {
@@ -73,14 +103,16 @@ public class GenericFindService {
         return new ArrayList<>(selectors);
     }
 
-    private List<Expression<AdsMetric>> buildGroupBy(GenericFilter filter, Root<AdsMetric> root) {
+    protected List<Expression<AdsMetric>> buildGroupBy(GenericFilter filter, Root<AdsMetric> root) {
         List<Expression<AdsMetric>> expressionList = new ArrayList<>();
-        filter.getGroupBy().forEach(group -> expressionList.add(root.get(group.name().toLowerCase())));
+        if (filter.getGroupBy() != null) {
+            filter.getGroupBy().forEach(group -> expressionList.add(root.get(group.name().toLowerCase())));
+        }
 
         return expressionList;
     }
 
-    private List<Predicate> buildFilter(GenericFilter filter, CriteriaBuilder cb, Root<AdsMetric> root) {
+    protected List<Predicate> buildFilter(GenericFilter filter, CriteriaBuilder cb, Root<AdsMetric> root) {
         List<Predicate> predicates = new ArrayList<>();
 
         if (filter.getStartDate() != null) {
@@ -106,7 +138,7 @@ public class GenericFindService {
         return predicates;
     }
 
-    private List<Map<String, Object>> convertResult(List<Selection> selectors, List<Object[]> result, boolean calculateCTR) {
+    protected List<Map<String, Object>> convertResult(List<Selection<?>> selectors, List<Object[]> result, boolean calculateCTR) {
         List<Map<String, Object>> convertedResult = new ArrayList<>();
 
         result.forEach(rawEntry -> {
