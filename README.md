@@ -1,6 +1,6 @@
 ### test project for German Standard
 
-swagger: ec2-52-208-223-96.eu-west-1.compute.amazonaws.com:8081/swagger-ui/index.html
+swagger: ec2-52-208-223-96.eu-west-1.compute.amazonaws.com:8081/swagger-ui.html
 
 request date pattern: "MM/dd/yy"
 
